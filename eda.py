@@ -301,6 +301,71 @@ else:
     print("   oof_preds.npy absent — lance analyze_model.py d'abord")
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 8. Heatmap top-50 features × classes
+# ══════════════════════════════════════════════════════════════════════════════
+print("8/8 — Heatmap top-50 features × classes")
+
+imp_path   = HERE / "feature_importance.csv"
+feat_cache = HERE / "cache" / "features.pkl"
+
+if imp_path.exists() and feat_cache.exists():
+    import pickle
+    from scipy.stats import zscore
+
+    df_imp = pd.read_csv(imp_path)
+    top50  = df_imp.head(50)["feature"].tolist()
+
+    with open(feat_cache, "rb") as f:
+        feat_ckpt = pickle.load(f)
+
+    X = feat_ckpt["X_train"]
+    y = feat_ckpt["y"]
+
+    # Garde uniquement les features présentes dans X
+    top50 = [f for f in top50 if f in X.columns]
+
+    # Moyenne par classe pour chaque feature
+    class_means = np.array([
+        X[top50].values[y == c].mean(axis=0)
+        for c in range(6)
+    ])  # shape (6, n_features)
+
+    # Z-score sur les 6 classes pour chaque feature (axe 0 = classes)
+    with np.errstate(invalid="ignore"):
+        z = zscore(class_means, axis=0)
+    z = np.nan_to_num(z)  # std=0 → zscore=nan → 0
+
+    # Noms raccourcis pour l'axe y
+    short_labels = [f[:40] + "…" if len(f) > 40 else f for f in top50]
+
+    fig, ax = plt.subplots(figsize=(10, 18))
+    im = ax.imshow(z.T, aspect="auto", cmap="RdBu_r", vmin=-2.5, vmax=2.5)
+
+    ax.set_xticks(range(6))
+    ax.set_xticklabels(CLASSES, rotation=30, ha="right", fontsize=9)
+    ax.set_yticks(range(len(top50)))
+    ax.set_yticklabels(short_labels, fontsize=7)
+    ax.set_xlabel("Class", fontsize=10)
+    ax.set_title(
+        "Top-50 features — mean z-score per class\n"
+        "Red = above average for this class  |  Blue = below average",
+        fontsize=10,
+    )
+
+    plt.colorbar(im, ax=ax, fraction=0.02, pad=0.01, label="z-score")
+    fig.tight_layout()
+    fig.savefig(OUT_DIR / "08_feature_heatmap_top50.png", bbox_inches="tight", dpi=150)
+    plt.close()
+    print("   08_feature_heatmap_top50.png sauvegardé")
+else:
+    missing = []
+    if not imp_path.exists():
+        missing.append("feature_importance.csv (lance feature_importance.py)")
+    if not feat_cache.exists():
+        missing.append("cache/features.pkl (lance feature_engineering.py)")
+    print(f"   Absent — fichiers manquants : {', '.join(missing)}")
+
+# ══════════════════════════════════════════════════════════════════════════════
 print(f"\nFigures sauvegardées dans : {OUT_DIR}")
 print("  01_class_distribution.png")
 print("  02_geographic_distribution.png")
@@ -309,3 +374,4 @@ print("  04_status_progression.png")
 print("  05_spectral_signatures.png")
 print("  06_feature_importance_top20.png")
 print("  07_confusion_matrix.png")
+print("  08_feature_heatmap_top50.png")

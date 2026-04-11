@@ -115,13 +115,15 @@ class_weights = {
 
 | Class | Precision | Recall | F1 | Support |
 |---|---|---|---|---|
-| Demolition | 0.764 | 0.939 | 0.843 | 31,509 |
-| Road | 0.821 | 0.827 | 0.824 | 14,305 |
-| Residential | 0.836 | 0.802 | 0.819 | 148,435 |
-| Commercial | 0.736 | 0.735 | 0.736 | 100,422 |
-| Industrial | 0.392 | 0.103 | 0.163 | 1,324 |
-| Mega Projects | 0.143 | 0.013 | 0.024 | 151 |
-| **Macro F1** | | | **0.568** | |
+| Demolition | 0.763 | 0.940 | 0.843 | 31,509 |
+| Road | 0.823 | 0.826 | 0.824 | 14,305 |
+| Residential | 0.837 | 0.802 | 0.819 | 148,435 |
+| Commercial | 0.737 | 0.737 | 0.737 | 100,422 |
+| Industrial | 0.398 | 0.105 | 0.166 | 1,324 |
+| Mega Projects | 0.125 | 0.013 | 0.024 | 151 |
+| **Macro F1** | | | **0.569 ± 0.008** | |
+
+Log-Loss OOF: 0.618. Std across folds: ±0.008 — instability driven by the rare classes (Industrial, Mega Projects).
 
 ### Kaggle Leaderboard
 
@@ -138,11 +140,13 @@ The gap between OOF (0.568) and Kaggle private (0.899) has two likely causes. Fi
 
 ### Main Error Patterns
 
-The confusion matrix reveals two dominant failure modes:
+The confusion matrix reveals three dominant failure modes:
 
-1. **Residential ↔ Commercial confusion** — 15% of Residential labelled as Commercial and vice versa. These classes share construction patterns and are only distinguishable through fine-grained geographic and spectral features.
+1. **Residential ↔ Commercial confusion** — 15% of Residential predicted as Commercial, 22% of Commercial predicted as Residential. These two classes share construction timelines and spectral profiles; they are only separable through fine-grained geographic and neighbourhood features.
 
-2. **Industrial → Commercial** — 65% of Industrial polygons are predicted as Commercial, with high confidence (mean 0.865). Industrial zones share similar construction statuses but are geographically distinct (lower latitudes, higher neighbour density).
+2. **Industrial → Commercial** — 65% of Industrial polygons (854/1,324) are predicted as Commercial, with high confidence (mean 0.873). The model is confident but wrong: the median probability assigned to the true Industrial class on genuine Industrial examples is only 0.006. This is the main bottleneck for macro F1.
+
+3. **Mega Projects — near-complete failure** — only 2 out of 151 examples correctly identified (F1 = 0.024). The model assigns a median probability of 0.0001 to the Mega Projects class on true Mega Projects examples, suggesting the class is essentially invisible to the model in CV conditions.
 
 ---
 
@@ -158,7 +162,7 @@ Cohen d analysis shows that the strongest discriminant between Industrial and Co
 
 ### Why Mega Projects is hard
 
-With only 151 training examples, the model assigns a median probability of 0.0002 to Mega Projects on true positive examples. Class weights of 265× partially mitigate this, but the signal-to-noise ratio is fundamentally limited by the sample size. The spectral signature (darker across all channels) is real but has Cohen d < 0.5 vs all other classes.
+With only 151 training examples, the model assigns a median probability of 0.0001 to Mega Projects on true positive examples — essentially noise. Class weights of 265× partially mitigate this, but the signal-to-noise ratio is fundamentally limited by the sample size. The spectral signature (darker across all channels) is real but has Cohen d < 0.5 vs all other classes.
 
 <p align="center">
   <img src="results/figures/05_spectral_signatures.png" width="700"/>
