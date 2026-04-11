@@ -1,0 +1,30 @@
+# ── Données (trop grandes pour GitHub — placer dans data/ localement) ────────
+data/
+
+# ── Cache XGBoost (généré automatiquement) ────────────────────────────────────
+cache/
+submissions_iter/
+
+# ── Modèles et probabilités brutes ────────────────────────────────────────────
+*.ubj
+*.pt
+*.npy
+
+# ── Études Optuna ─────────────────────────────────────────────────────────────
+*.db
+
+# ── Soumissions CSV ───────────────────────────────────────────────────────────
+submission_*.csv
+
+# ── Fichiers d'analyse intermédiaires ─────────────────────────────────────────
+analyse_*.png
+analyse_*.csv
+features_to_keep_*.txt
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
