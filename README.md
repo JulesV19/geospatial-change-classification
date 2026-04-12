@@ -156,13 +156,14 @@ The confusion matrix reveals three dominant failure modes:
 
 Cohen d analysis shows that the strongest discriminant between Industrial and Commercial is **geographic** (latitude, d = 1.26), not spectral (RGI, d = 0.36). Industrial zones at similar latitudes to Commercial zones are nearly indistinguishable from features alone. New features targeting neighbour density (`area_per_neighbor_1km`, `lat_x_n_neighbors`) were added to address this.
 
-<p align="center">
-  <img src="results/figures/04_status_progression.png" width="700"/>
-</p>
 
 ### Why Mega Projects is hard
 
 With only 151 training examples, the model assigns a median probability of 0.0001 to Mega Projects on true positive examples — essentially noise. Class weights of 265× partially mitigate this, but the signal-to-noise ratio is fundamentally limited by the sample size. The spectral signature (darker across all channels) is real but has Cohen d < 0.5 vs all other classes.
+
+<p align="center">
+  <img src="results/figures/04_status_progression.png" width="700"/>
+</p>
 
 <p align="center">
   <img src="results/figures/05_spectral_signatures.png" width="700"/>
