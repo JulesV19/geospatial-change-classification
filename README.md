@@ -152,6 +152,12 @@ The confusion matrix reveals three dominant failure modes:
 
 ## Analysis
 
+### Nature of the dataset
+
+The competition provides a **derived version of QFabric**: instead of raw satellite tiles, each polygon is described by pre-aggregated RGB statistics (mean and standard deviation per channel, per date). The actual pixel data — textures, shapes, spatial structure — is not accessible.
+
+This has a direct consequence on rare classes. Industrial and Mega Projects are visually distinctive at the pixel level (large uniform structures, specific textures), but these visual cues collapse into a single mean RGB value once aggregated. The poor performance on rare classes is therefore partly a fundamental limitation of the input modality, not only a class imbalance problem.
+
 ### Why Industrial is hard
 
 Cohen d analysis shows that the strongest discriminant between Industrial and Commercial is **geographic** (latitude, d = 1.26), not spectral (RGI, d = 0.36). Industrial zones at similar latitudes to Commercial zones are nearly indistinguishable from features alone. New features targeting neighbour density (`area_per_neighbor_1km`, `lat_x_n_neighbors`) were added to address this.
@@ -160,6 +166,8 @@ Cohen d analysis shows that the strongest discriminant between Industrial and Co
 ### Why Mega Projects is hard
 
 With only 151 training examples, the model assigns a median probability of 0.0001 to Mega Projects on true positive examples — essentially noise. Class weights of 265× partially mitigate this, but the signal-to-noise ratio is fundamentally limited by the sample size. The spectral signature (darker across all channels) is real but has Cohen d < 0.5 vs all other classes.
+
+### Temporal evolution
 
 <p align="center">
   <img src="results/figures/04_status_progression.png" width="700"/>
