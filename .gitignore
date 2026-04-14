@@ -28,3 +28,7 @@ __pycache__/
 
 # ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
+
+# ── Fichiers d'analyse ─────────────────────────────────────────
+features_to_keep.txt
+feature_importance.csv
