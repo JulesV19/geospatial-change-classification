@@ -16,10 +16,20 @@ submissions_iter/
 # ── Soumissions CSV ───────────────────────────────────────────────────────────
 submission_*.csv
 
-# ── Fichiers d'analyse intermédiaires ─────────────────────────────────────────
+# ── Fichiers d'analyse intermédiaires (racine) ────────────────────────────────
 analyse_*.png
 analyse_*.csv
 features_to_keep_*.txt
+features_to_keep.txt
+feature_importance.csv
+thresholds.txt
+
+# ── Notes internes / Obsidian ─────────────────────────────────────────────────
+Classification sat/
+rapport_minoritaires.md
+
+# ── Anciens résultats ─────────────────────────────────────────────────────────
+results_nv/
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
@@ -29,6 +39,10 @@ __pycache__/
 # ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 
-# ── Fichiers d'analyse ─────────────────────────────────────────
-features_to_keep.txt
-feature_importance.csv
+# ── Scripts utilitaires non essentiels ───────────────────────────────────────
+plot_model_analysis.py
+results/
+
+# ── LLM tooling ───────────────────────────────────────────────────────────────
+CLAUDE.md
+feature_importance.py

@@ -114,14 +114,6 @@ def _engineer_features(df):
     feat["bbox_area"]         = feat["bbox_width"] * feat["bbox_height"]
     feat["fill_ratio"]        = feat["area"] / (feat["bbox_area"] + 1e-10)
 
-    centroids = df.geometry.centroid
-    feat["centroid_lon"] = centroids.x
-    feat["centroid_lat"] = centroids.y
-
-    # Bins géographiques 0.05° ≈ 5 km — "cette zone est majoritairement X"
-    feat["centroid_lon_bin"] = (centroids.x / 0.05).round().astype("int32")
-    feat["centroid_lat_bin"] = (centroids.y / 0.05).round().astype("int32")
-
     feat["n_vertices"] = df.geometry.apply(
         lambda g: len(g.exterior.coords) if hasattr(g, "exterior") and g.exterior is not None else 0
     )
@@ -364,7 +356,6 @@ def _engineer_features(df):
     feat["area_x_status_range"]       = feat["area"] * feat["status_range"]
     feat["compactness_x_brightness"]  = feat["compactness"] * feat["brightness_overall_mean"]
     feat["n_vertices_x_area"]         = feat["n_vertices"] * feat["log_area"]
-    feat["lat_x_lon"]                 = feat["centroid_lat"] * feat["centroid_lon"]
     feat["elongation_x_log_area"]     = feat["elongation"] * feat["log_area"]
     feat["area_x_status_last"]        = feat["area"] * feat["status_last"]
     feat["convexity_x_status_range"]  = feat["convexity"] * feat["status_range"]
@@ -379,22 +370,34 @@ def _engineer_features(df):
     # EXG dernière date × log(area) → vert + grande zone = Mega Projects
     # (exg_date5 : Mega=+6 vs Commercial=-0.7, Industrial=-16 → signal fort)
     if "exg_date5" in feat.columns:
-        feat["exg_last_x_log_area"]     = feat["exg_date5"] * feat["log_area"]
-        feat["exg_last_x_centroid_lat"] = feat["exg_date5"] * feat["centroid_lat"]
+        feat["exg_last_x_log_area"] = feat["exg_date5"] * feat["log_area"]
     else:
-        feat["exg_last_x_log_area"]     = np.nan
-        feat["exg_last_x_centroid_lat"] = np.nan
-
-    # Latitude × log(area) → Industrial : zone géographique + taille
-    # (centroid_lat : Industrial=5 vs Commercial=29 → signal géographique fort)
-    feat["lat_x_log_area"] = feat["centroid_lat"] * feat["log_area"]
+        feat["exg_last_x_log_area"] = np.nan
 
     # EXG moyen sur toutes les dates × log(area)
     exg_cols = [f"exg_date{d}" for d in range(1, 6) if f"exg_date{d}" in feat.columns]
     if exg_cols:
         feat["exg_mean_x_log_area"] = feat[exg_cols].mean(axis=1) * feat["log_area"]
+        # Profil EXG sur le temps : persistance faible = Industrial (jamais vert)
+        feat["exg_overall_min"] = feat[exg_cols].min(axis=1)
+        feat["exg_overall_max"] = feat[exg_cols].max(axis=1)
+        feat["exg_overall_std"] = feat[exg_cols].std(axis=1)
     else:
         feat["exg_mean_x_log_area"] = np.nan
+        feat["exg_overall_min"] = np.nan
+        feat["exg_overall_max"] = np.nan
+        feat["exg_overall_std"] = np.nan
+
+    rgi_cols = [f"rgi_date{d}" for d in range(1, 6) if f"rgi_date{d}" in feat.columns]
+    if rgi_cols:
+        feat["rgi_overall_max"] = feat[rgi_cols].max(axis=1)
+    else:
+        feat["rgi_overall_max"] = np.nan
+
+    if "brightness_overall_std" in feat.columns and "brightness_overall_mean" in feat.columns:
+        feat["brightness_cv_overall"] = feat["brightness_overall_std"] / (feat["brightness_overall_mean"].abs() + 1.0)
+    else:
+        feat["brightness_cv_overall"] = np.nan
 
     # Hétérogénéité de texture × log(area) → Industrial (toits variés, parkings)
     cov_cols = [c for c in feat.columns if c.startswith("cov_")]
@@ -575,18 +578,38 @@ def _add_spatial_features(train_gdf, test_gdf, X_train, X_test):
     mean_area_1000 = np.empty(len(idx_1000))
     std_area_1000  = np.empty(len(idx_1000))
     n_large_1000   = np.empty(len(idx_1000))
+    mean_exg_1000  = np.empty(len(idx_1000))
+    mean_bright_1000 = np.empty(len(idx_1000))
+
+    # Spectral arrays combinés (train puis test, même ordre que combined_geom)
+    _exg_col    = "exg_date5"
+    _bright_col = "brightness_date5"
+    _exg_all    = np.concatenate([
+        X_train[_exg_col].values    if _exg_col    in X_train.columns else np.zeros(n_train),
+        X_test[_exg_col].values     if _exg_col    in X_test.columns  else np.zeros(len(X_test)),
+    ])
+    _bright_all = np.concatenate([
+        X_train[_bright_col].values if _bright_col in X_train.columns else np.zeros(n_train),
+        X_test[_bright_col].values  if _bright_col in X_test.columns  else np.zeros(len(X_test)),
+    ])
+    global_median_exg   = np.nanmedian(_exg_all)
+    global_median_bright = np.nanmedian(_bright_all)
 
     for i, idx in enumerate(idx_1000):
         neighbors = [j for j in idx if j != i]
         if neighbors:
             na = areas[neighbors]
-            mean_area_1000[i] = na.mean()
-            std_area_1000[i]  = na.std()
-            n_large_1000[i]   = (na > 5_000).sum()
+            mean_area_1000[i]   = na.mean()
+            std_area_1000[i]    = na.std()
+            n_large_1000[i]     = (na > 5_000).sum()
+            mean_exg_1000[i]    = _exg_all[neighbors].mean()
+            mean_bright_1000[i] = _bright_all[neighbors].mean()
         else:
-            mean_area_1000[i] = global_median_area
-            std_area_1000[i]  = 0.0
-            n_large_1000[i]   = 0.0
+            mean_area_1000[i]   = global_median_area
+            std_area_1000[i]    = 0.0
+            n_large_1000[i]     = 0.0
+            mean_exg_1000[i]    = global_median_exg
+            mean_bright_1000[i] = global_median_bright
 
     area_vs_mean_neighbor = areas / (mean_area_1000 + 1e-6)
     area_global_rank      = rankdata(areas, method="average") / len(areas)
@@ -618,6 +641,9 @@ def _add_spatial_features(train_gdf, test_gdf, X_train, X_test):
         X["log_n_neighbors_1km"]         = log_n_neighbors[sl]
         X["large_neighbor_pct_1km"]      = large_neighbor_pct[sl]
         X["std_vs_mean_area_neighbors"]  = std_vs_mean_area[sl]
+        # Signal spectral de zone : EXG et luminosité des voisins (contexte Industrial)
+        X["mean_exg_neighbors_1km"]      = mean_exg_1000[sl]
+        X["mean_bright_neighbors_1km"]   = mean_bright_1000[sl]
 
     return X_train, X_test
 
@@ -695,18 +721,6 @@ def build_features(force_rebuild: bool = False) -> dict:
             X_train[f"te_{col_name}_class{c}"] = te_tr[:, c]
             X_test[f"te_{col_name}_class{c}"]  = te_te[:, c]
 
-    # Target encoding de la cellule géographique lat/lon
-    geo_cell_train = (X_train["centroid_lat_bin"].astype(str) + "_"
-                      + X_train["centroid_lon_bin"].astype(str))
-    geo_cell_test  = (X_test["centroid_lat_bin"].astype(str) + "_"
-                      + X_test["centroid_lon_bin"].astype(str))
-    te_tr, te_te = _target_encode_column(
-        geo_cell_train, geo_cell_test, y, 6, skf_folds, smoothing=5,
-    )
-    for c in range(6):
-        X_train[f"te_geo_cell_class{c}"] = te_tr[:, c]
-        X_test[f"te_geo_cell_class{c}"]  = te_te[:, c]
-
     print(f"  Après target encoding: {X_train.shape[1]}")
 
     # ── One-hot encoding ─────────────────────────────────────────────────────
@@ -774,7 +788,6 @@ def build_features(force_rebuild: bool = False) -> dict:
     for X in [X_train, X_test]:
         n_nbr  = X["n_neighbors_1km"].values
         log_a  = X["log_area"].values
-        lat    = X["centroid_lat"].values
         cmpct  = X["compactness"].values
         s_last = X["status_last"].values
 
@@ -782,8 +795,6 @@ def build_features(force_rebuild: bool = False) -> dict:
         X["log_area_x_n_neighbors"]     = log_a * n_nbr
         # Zone dense + compacte → Industrial (bâtiments rectangulaires rapprochés)
         X["compactness_x_n_neighbors"]  = cmpct * n_nbr
-        # Latitude × densité → discrimine Industrial (lat basse) des Commercial (lat haute)
-        X["lat_x_n_neighbors"]          = lat * n_nbr
         # Statut final Operational dans zone dense → Industrial fonctionnel
         X["neighbors_x_status_last"]    = n_nbr * s_last
         # Voisinage rapproché × grande surface → cluster industriel
@@ -793,7 +804,72 @@ def build_features(force_rebuild: bool = False) -> dict:
             np.log1p(X["dist_nearest_neighbor"].values) * X["log_n_neighbors_1km"].values
         )
 
-    print(f"  Après interactions Industrial: {X_train.shape[1]}")
+    # ── Interactions ciblées Industrial/Mega (issues de l'analyse TP vs FN) ───
+    print("\n7c) Interactions Industrial/Mega (analyse TP vs FN)...")
+    for X in [X_train, X_test]:
+        b5  = X["brightness_date5"].values
+        e5  = X["exg_date5"].values
+        sl  = X["status_last"].values
+        ctc = X["chrono_status_total_change"].values
+
+        # Industrial TP : très brillant ET peu de végétation (toits métal/béton)
+        X["bright_x_neg_exg_d5"] = b5 * (-e5)
+
+        # Industrial TP : statut final élevé avec peu de changements (chantier stable)
+        X["stable_high_status"] = sl / (np.abs(ctc) + 1)
+
+    print(f"  Après interactions Industrial/Mega: {X_train.shape[1]}")
+
+    # ── Interactions Commercial vs Residential (post-spatial) ─────────────────
+    # Basées sur l'analyse de confusion : la taille du voisinage et la densité
+    # sont les features les plus discriminantes entre ces deux classes.
+    print("\n7d) Interactions Commercial vs Residential...")
+    for X in [X_train, X_test]:
+        log_a    = X["log_area"].values
+        n500     = X["n_neighbors_500m"].values
+        mean_nb  = X["mean_area_neighbors_1km"].values
+        std_nb   = X["std_area_neighbors_1km"].values
+        lg_pct   = X["large_neighbor_pct_1km"].values
+        s0       = X["chrono_status_0"].values   # status initial (chronologique)
+
+        # Voisins grands par rapport à soi → zone Commercial
+        # (Comm correct: 1248 m² voisins vs Resi correct: 292 m²)
+        X["neighbor_area_vs_self"] = mean_nb / (np.expm1(log_a) + 1.0)
+
+        # Grande zone avec beaucoup de grands voisins → signal Commercial fort
+        X["log_area_x_large_neighbor_pct"] = log_a * lg_pct
+
+        # Densité de voisins normalisée par la taille
+        # Resi→Comm errors ont peu de voisins (86) vs Resi correct (228)
+        X["n500_per_log_area"] = n500 / (log_a + 1.0)
+
+        # Hétérogénéité des voisins × taille propre
+        # Comm correct a std_voisins=1915, Comm→Resi erreurs ont 985
+        X["std_neighbor_x_log_area"] = np.log1p(std_nb) * log_a
+
+        # Statut initial bas + grande zone = Commercial (greenland → construction)
+        # Comm→Resi errors ont status_first=6 (déjà en chantier) → ressemble à Resi
+        X["low_start_status_x_log_area"] = (s0 <= 2).astype(float) * log_a
+
+    print(f"  Après interactions Comm/Resi: {X_train.shape[1]}")
+
+    # ── Interactions zone spectrale × voisinage (Industrial vs Commercial) ────
+    print("\n7e) Interactions spectral×zone (Industrial vs Commercial)...")
+    for X in [X_train, X_test]:
+        e5    = X["exg_date5"].values
+        b5    = X["brightness_date5"].values
+        me    = X["mean_exg_neighbors_1km"].values
+        mb    = X["mean_bright_neighbors_1km"].values
+        n_nbr = X["n_neighbors_1km"].values
+
+        # Moi négatif EXG ET mes voisins aussi = zone industrielle confirmée
+        X["zone_exg_signal"]        = e5 * me
+        # Moi brillant ET voisins brillants = toits industriels en cluster
+        X["bright_zone_signal"]     = b5 * mb
+        # Fort signal Industrial : peu de végétation propre × densité de voisins
+        X["neg_exg_x_n_neighbors"]  = (-e5) * n_nbr
+
+    print(f"  Après interactions spectral×zone: {X_train.shape[1]}")
 
     # ── Nettoyage final ───────────────────────────────────────────────────────
     print("\n8) Nettoyage et imputation...")
@@ -837,7 +913,7 @@ def build_features(force_rebuild: bool = False) -> dict:
 
 
 if __name__ == "__main__":
-    data = build_features(force_rebuild=False)
+    data = build_features(force_rebuild=True)
     print(f"\nX_train : {data['X_train'].shape}")
     print(f"X_test  : {data['X_test'].shape}")
     print(f"y       : {data['y'].shape} | classes: {np.unique(data['y'], return_counts=True)}")
